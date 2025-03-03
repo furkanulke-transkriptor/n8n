@@ -981,198 +981,212 @@ export class WorkflowExecute {
 		additionalData: IWorkflowExecuteAdditionalData,
 		mode: WorkflowExecuteMode,
 		abortSignal?: AbortSignal,
-	): Promise<IRunNodeResponse> {
+	  ): Promise<IRunNodeResponse> {
 		const { node } = executionData;
 		let inputData = executionData.data;
-
-		if (node.disabled === true) {
+	  
+		try {
+		  if (node.disabled === true) {
 			// If node is disabled simply pass the data through
 			// return NodeRunHelpers.
 			if (inputData.hasOwnProperty('main') && inputData.main.length > 0) {
-				// If the node is disabled simply return the data from the first main input
-				if (inputData.main[0] === null) {
-					return { data: undefined };
-				}
-				return { data: [inputData.main[0]] };
+			  // If the node is disabled simply return the data from the first main input
+			  if (inputData.main[0] === null) {
+				return { data: undefined };
+			  }
+			  return { data: [inputData.main[0]] };
 			}
 			return { data: undefined };
-		}
-
-		const nodeType = workflow.nodeTypes.getByNameAndVersion(node.type, node.typeVersion);
-
-		let connectionInputData: INodeExecutionData[] = [];
-		if (nodeType.execute || (!nodeType.poll && !nodeType.trigger && !nodeType.webhook)) {
+		  }
+	  
+		  const nodeType = workflow.nodeTypes.getByNameAndVersion(node.type, node.typeVersion);
+	  
+		  let connectionInputData: INodeExecutionData[] = [];
+		  if (nodeType.execute || (!nodeType.poll && !nodeType.trigger && !nodeType.webhook)) {
 			// Only stop if first input is empty for execute runs. For all others run anyways
 			// because then it is a trigger node. As they only pass data through and so the input-data
 			// becomes output-data it has to be possible.
-
+	  
 			if (inputData.main?.length > 0) {
-				// We always use the data of main input and the first input for execute
-				connectionInputData = inputData.main[0] as INodeExecutionData[];
+			  // We always use the data of main input and the first input for execute
+			  connectionInputData = inputData.main[0] as INodeExecutionData[];
 			}
-
+	  
 			const forceInputNodeExecution = workflow.settings.executionOrder !== 'v1';
 			if (!forceInputNodeExecution) {
-				// If the nodes do not get force executed data of some inputs may be missing
-				// for that reason do we use the data of the first one that contains any
-				for (const mainData of inputData.main) {
-					if (mainData?.length) {
-						connectionInputData = mainData;
-						break;
-					}
+			  // If the nodes do not get force executed data of some inputs may be missing
+			  // for that reason do we use the data of the first one that contains any
+			  for (const mainData of inputData.main) {
+				if (mainData?.length) {
+				  connectionInputData = mainData;
+				  break;
 				}
+			  }
 			}
-
+	  
 			if (connectionInputData.length === 0) {
-				// No data for node so return
-				return { data: undefined };
+			  // No data for node so return
+			  return { data: undefined };
 			}
-		}
-
-		if (
+		  }
+	  
+		  if (
 			runExecutionData.resultData.lastNodeExecuted === node.name &&
 			runExecutionData.resultData.error !== undefined
-		) {
+		  ) {
 			// The node did already fail. So throw an error here that it displays and logs it correctly.
 			// Does get used by webhook and trigger nodes in case they throw an error that it is possible
 			// to log the error and display in Editor-UI.
 			if (
-				runExecutionData.resultData.error.name === 'NodeOperationError' ||
-				runExecutionData.resultData.error.name === 'NodeApiError'
+			  runExecutionData.resultData.error.name === 'NodeOperationError' ||
+			  runExecutionData.resultData.error.name === 'NodeApiError'
 			) {
-				throw runExecutionData.resultData.error;
+			  throw runExecutionData.resultData.error;
 			}
-
+	  
 			const error = new Error(runExecutionData.resultData.error.message);
 			error.stack = runExecutionData.resultData.error.stack;
 			throw error;
-		}
-
-		if (node.executeOnce === true) {
+		  }
+	  
+		  if (node.executeOnce === true) {
 			// If node should be executed only once so use only the first input item
 			const newInputData: ITaskDataConnections = {};
 			for (const connectionType of Object.keys(inputData)) {
-				newInputData[connectionType] = inputData[connectionType].map((input) => {
-					// eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-					return input && input.slice(0, 1);
-				});
+			  newInputData[connectionType] = inputData[connectionType].map((input) => {
+				// eslint-disable-next-line @typescript-eslint/prefer-optional-chain
+				return input && input.slice(0, 1);
+			  });
 			}
 			inputData = newInputData;
-		}
-
-		if (nodeType.execute) {
+		  }
+	  
+		  if (nodeType.execute) {
 			const closeFunctions: CloseFunction[] = [];
 			const context = new ExecuteContext(
-				workflow,
-				node,
-				additionalData,
-				mode,
-				runExecutionData,
-				runIndex,
-				connectionInputData,
-				inputData,
-				executionData,
-				closeFunctions,
-				abortSignal,
+			  workflow,
+			  node,
+			  additionalData,
+			  mode,
+			  runExecutionData,
+			  runIndex,
+			  connectionInputData,
+			  inputData,
+			  executionData,
+			  closeFunctions,
+			  abortSignal,
 			);
-
+	  
 			const data =
-				nodeType instanceof Node
-					? await nodeType.execute(context)
-					: await nodeType.execute.call(context);
-
+			  nodeType instanceof Node
+				? await nodeType.execute(context)
+				: await nodeType.execute.call(context);
+	  
 			const closeFunctionsResults = await Promise.allSettled(
-				closeFunctions.map(async (fn) => await fn()),
+			  closeFunctions.map(async (fn) => await fn()),
 			);
-
+	  
 			const closingErrors = closeFunctionsResults
-				.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-return
-				.map((result) => result.reason);
-
+			  .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+			  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+			  .map((result) => result.reason);
+	  
 			if (closingErrors.length > 0) {
-				if (closingErrors[0] instanceof Error) throw closingErrors[0];
-				throw new ApplicationError("Error on execution node's close function(s)", {
-					extra: { nodeName: node.name },
-					tags: { nodeType: node.type },
-					cause: closingErrors,
-				});
+			  if (closingErrors[0] instanceof Error) throw closingErrors[0];
+			  throw new ApplicationError("Error on execution node's close function(s)", {
+				extra: { nodeName: node.name },
+				tags: { nodeType: node.type },
+				cause: closingErrors,
+			  });
 			}
-
+	  
 			return { data, hints: context.hints };
-		} else if (nodeType.poll) {
+		  } else if (nodeType.poll) {
 			if (mode === 'manual') {
-				// In manual mode run the poll function
-				const context = new PollContext(workflow, node, additionalData, mode, 'manual');
-				return { data: await nodeType.poll.call(context) };
+			  // In manual mode run the poll function
+			  const context = new PollContext(workflow, node, additionalData, mode, 'manual');
+			  return { data: await nodeType.poll.call(context) };
 			}
 			// In any other mode pass data through as it already contains the result of the poll
 			return { data: inputData.main as INodeExecutionData[][] };
-		} else if (nodeType.trigger) {
+		  } else if (nodeType.trigger) {
 			if (mode === 'manual') {
-				// In manual mode start the trigger
-				const triggerResponse = await Container.get(TriggersAndPollers).runTrigger(
-					workflow,
-					node,
-					NodeExecuteFunctions.getExecuteTriggerFunctions,
-					additionalData,
-					mode,
-					'manual',
-				);
-
-				if (triggerResponse === undefined) {
-					return { data: null };
-				}
-
-				let closeFunction;
-				if (triggerResponse.closeFunction) {
-					// In manual mode we return the trigger closeFunction. That allows it to be called directly
-					// but we do not have to wait for it to finish. That is important for things like queue-nodes.
-					// There the full close will may be delayed till a message gets acknowledged after the execution.
-					// If we would not be able to wait for it to close would it cause problems with "own" mode as the
-					// process would be killed directly after it and so the acknowledge would not have been finished yet.
-					closeFunction = triggerResponse.closeFunction;
-
-					// Manual testing of Trigger nodes creates an execution. If the execution is cancelled, `closeFunction` should be called to cleanup any open connections/consumers
-					abortSignal?.addEventListener('abort', closeFunction);
-				}
-
-				if (triggerResponse.manualTriggerFunction !== undefined) {
-					// If a manual trigger function is defined call it and wait till it did run
-					await triggerResponse.manualTriggerFunction();
-				}
-
-				const response = await triggerResponse.manualTriggerResponse!;
-
-				if (response.length === 0) {
-					return { data: null, closeFunction };
-				}
-
-				return { data: response, closeFunction };
+			  // In manual mode start the trigger
+			  const triggerResponse = await Container.get(TriggersAndPollers).runTrigger(
+				workflow,
+				node,
+				NodeExecuteFunctions.getExecuteTriggerFunctions,
+				additionalData,
+				mode,
+				'manual',
+			  );
+	  
+			  if (triggerResponse === undefined) {
+				return { data: null };
+			  }
+	  
+			  let closeFunction;
+			  if (triggerResponse.closeFunction) {
+				// In manual mode we return the trigger closeFunction. That allows it to be called directly
+				// but we do not have to wait for it to finish. That is important for things like queue-nodes.
+				// There the full close will may be delayed till a message gets acknowledged after the execution.
+				// If we would not be able to wait for it to close would it cause problems with "own" mode as the
+				// process would be killed directly after it and so the acknowledge would not have been finished yet.
+				closeFunction = triggerResponse.closeFunction;
+	  
+				// Manual testing of Trigger nodes creates an execution. If the execution is cancelled, `closeFunction` should be called to cleanup any open connections/consumers
+				abortSignal?.addEventListener('abort', closeFunction);
+			  }
+	  
+			  if (triggerResponse.manualTriggerFunction !== undefined) {
+				// If a manual trigger function is defined call it and wait till it did run
+				await triggerResponse.manualTriggerFunction();
+			  }
+	  
+			  const response = await triggerResponse.manualTriggerResponse!;
+	  
+			  if (response.length === 0) {
+				return { data: null, closeFunction };
+			  }
+	  
+			  return { data: response, closeFunction };
 			}
 			// For trigger nodes in any mode except "manual" do we simply pass the data through
 			return { data: inputData.main as INodeExecutionData[][] };
-		} else if (nodeType.webhook) {
+		  } else if (nodeType.webhook) {
 			// For webhook nodes always simply pass the data through
 			return { data: inputData.main as INodeExecutionData[][] };
-		} else {
+		  } else {
 			// NOTE: This block is only called by nodes tests.
 			// In the application, declarative nodes get assigned a `.execute` method in NodeTypes.
 			const context = new ExecuteContext(
-				workflow,
-				node,
-				additionalData,
-				mode,
-				runExecutionData,
-				runIndex,
-				connectionInputData,
-				inputData,
-				executionData,
-				[],
+			  workflow,
+			  node,
+			  additionalData,
+			  mode,
+			  runExecutionData,
+			  runIndex,
+			  connectionInputData,
+			  inputData,
+			  executionData,
+			  [],
 			);
 			const routingNode = new RoutingNode(context, nodeType);
 			const data = await routingNode.runNode();
 			return { data };
+		  }
+		} catch (error) {
+		  // Always log node execution errors at error level
+		  Logger.error(`Node execution failed: ${node.name} (${node.type})`, {
+			nodeName: node.name,
+			nodeType: node.type,
+			errorMessage: error.message,
+			stack: error.stack,
+			workflowId: workflow.id,
+		  });
+		  
+		  // Re-throw the error to let the parent handler process it
+		  throw error;
 		}
 	}
 
